@@ -1,0 +1,9 @@
+DirectoryIndex index.php
+Options -Indexes
+
+RewriteEngine On
+RewriteRule (^|/)(private|\.git)(/|$) - [F,L,NC]
+
+<FilesMatch "^(\.gitignore|README\.md)$">
+    Require all denied
+</FilesMatch>

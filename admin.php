@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
-require __DIR__ . '/../private/bootstrap.php';
-require __DIR__ . '/../private/layout.php';
+require __DIR__ . '/private/bootstrap.php';
+require __DIR__ . '/private/layout.php';
 
 $error = '';
 $entries = [];
