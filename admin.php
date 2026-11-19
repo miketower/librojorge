@@ -5,6 +5,8 @@ require __DIR__ . '/private/layout.php';
 
 $error = '';
 $entries = [];
+$detail = null;
+$detailRequested = isset($_GET['dedicatoria']);
 $page = filter_input(INPUT_GET, 'pagina', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 100000000]]) ?: 1;
 $hasNext = false;
 
@@ -53,13 +55,26 @@ try {
             exit;
         }
 
-        $query = db()->prepare('SELECT id, nombre, mensaje, archivo_nombre, archivo_mime, creado FROM dedicatorias ORDER BY id DESC LIMIT 21 OFFSET ?');
-        $query->bindValue(1, ($page - 1) * 20, PDO::PARAM_INT);
-        $query->execute();
-        $entries = $query->fetchAll(PDO::FETCH_ASSOC);
-        $hasNext = count($entries) > 20;
-        if ($hasNext) {
-            array_pop($entries);
+        if ($detailRequested) {
+            $detailId = filter_input(INPUT_GET, 'dedicatoria', FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            if ($detailId) {
+                $query = db()->prepare('SELECT id, nombre, mensaje, archivo_nombre, archivo_mime, creado FROM dedicatorias WHERE id = ?');
+                $query->execute([$detailId]);
+                $detail = $query->fetch(PDO::FETCH_ASSOC) ?: null;
+            }
+            if ($detail === null) {
+                http_response_code(404);
+                $error = 'No se encontró la dedicatoria.';
+            }
+        } else {
+            $query = db()->prepare('SELECT id, nombre, archivo_nombre, creado FROM dedicatorias ORDER BY id DESC LIMIT 21 OFFSET ?');
+            $query->bindValue(1, ($page - 1) * 20, PDO::PARAM_INT);
+            $query->execute();
+            $entries = $query->fetchAll(PDO::FETCH_ASSOC);
+            $hasNext = count($entries) > 20;
+            if ($hasNext) {
+                array_pop($entries);
+            }
         }
     }
 } catch (Throwable $exception) {
@@ -73,7 +88,7 @@ page_header('Panel de dedicatorias · Jorge Mario Blanco');
 <main class="panel">
     <section class="card">
         <p class="eyebrow">Acceso privado</p>
-        <h1>Dedicatorias recibidas</h1>
+        <h1><?= isset($_SESSION['admin']) && $detailRequested ? 'Detalle de la dedicatoria' : 'Dedicatorias recibidas' ?></h1>
         <?php if ($error !== ''): ?>
             <p class="error" role="alert"><?= e($error) ?></p>
         <?php endif ?>
@@ -91,25 +106,39 @@ page_header('Panel de dedicatorias · Jorge Mario Blanco');
                 <input type="hidden" name="csrf" value="<?= e(csrf()) ?>">
                 <button type="submit" name="salir" value="1">Cerrar sesión</button>
             </form>
-            <?php if ($entries === [] && $error === ''): ?>
+            <?php if ($detailRequested): ?>
+                <a class="back-link" href="admin.php?pagina=<?= $page ?>">← Volver a la lista</a>
+                <?php if ($detail !== null): ?>
+                    <article class="entry">
+                        <time><?= e($detail['creado']) ?></time>
+                        <h2><?= e($detail['nombre']) ?></h2>
+                        <?php if ($detail['mensaje'] !== ''): ?>
+                            <p><?= e($detail['mensaje']) ?></p>
+                        <?php endif ?>
+                        <?php if ($detail['archivo_nombre'] !== null): ?>
+                            <?php if (str_starts_with($detail['archivo_mime'], 'image/')): ?>
+                                <img class="entry-image" src="?archivo=<?= (int) $detail['id'] ?>&amp;vista=1" alt="Imagen adjunta de <?= e($detail['nombre']) ?>" loading="lazy">
+                            <?php endif ?>
+                            <a href="?archivo=<?= (int) $detail['id'] ?>">Descargar <?= e($detail['archivo_nombre']) ?></a>
+                        <?php endif ?>
+                    </article>
+                <?php endif ?>
+            <?php elseif ($entries !== []): ?>
+                <ul class="dedication-list" aria-label="Dedicatorias recibidas">
+                    <?php foreach ($entries as $entry): ?>
+                        <li>
+                            <div class="dedication-summary">
+                                <strong><?= e($entry['nombre']) ?></strong>
+                                <span><time><?= e($entry['creado']) ?></time><?= $entry['archivo_nombre'] !== null ? ' · Con adjunto' : '' ?></span>
+                            </div>
+                            <a class="detail-link" href="?pagina=<?= $page ?>&amp;dedicatoria=<?= (int) $entry['id'] ?>">Ver detalle<span class="visually-hidden"> de <?= e($entry['nombre']) ?></span></a>
+                        </li>
+                    <?php endforeach ?>
+                </ul>
+            <?php elseif ($error === ''): ?>
                 <p><?= $page === 1 ? 'Aún no se han recibido dedicatorias.' : 'No hay dedicatorias en esta página.' ?></p>
             <?php endif ?>
-            <?php foreach ($entries as $entry): ?>
-                <article class="entry">
-                    <time><?= e($entry['creado']) ?></time>
-                    <h2><?= e($entry['nombre']) ?></h2>
-                    <?php if ($entry['mensaje'] !== ''): ?>
-                        <p><?= e($entry['mensaje']) ?></p>
-                    <?php endif ?>
-                    <?php if ($entry['archivo_nombre'] !== null): ?>
-                        <?php if (str_starts_with($entry['archivo_mime'], 'image/')): ?>
-                            <img class="entry-image" src="?archivo=<?= (int) $entry['id'] ?>&amp;vista=1" alt="Imagen adjunta de <?= e($entry['nombre']) ?>" loading="lazy">
-                        <?php endif ?>
-                        <a href="?archivo=<?= (int) $entry['id'] ?>">Descargar <?= e($entry['archivo_nombre']) ?></a>
-                    <?php endif ?>
-                </article>
-            <?php endforeach ?>
-            <?php if ($page > 1 || $hasNext): ?>
+            <?php if (!$detailRequested && ($page > 1 || $hasNext)): ?>
                 <nav class="pagination" aria-label="Páginas de dedicatorias">
                     <?php if ($page > 1): ?><a href="?pagina=<?= $page - 1 ?>">Anterior</a><?php endif ?>
                     <?php if ($hasNext): ?><a href="?pagina=<?= $page + 1 ?>">Siguiente</a><?php endif ?>
